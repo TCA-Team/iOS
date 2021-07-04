@@ -9,18 +9,27 @@
 import UIKit
 import CoreData
 
-final class TUMSexyTableViewController: UITableViewController {
+final class TUMSexyTableViewController: UITableViewController, UISearchResultsUpdating {
+    
     typealias ImporterType = Importer<TUMSexyLink,[String: TUMSexyLink],JSONDecoder>
     
     private static let sortDescriptor = NSSortDescriptor(keyPath: \TUMSexyLink.linkDescription , ascending: true)
     private let importer = ImporterType(endpoint: TUMSexyAPI(), sortDescriptor: sortDescriptor)
-
+    
+    let searchController = UISearchController(searchResultsController: nil)
+    var filteredData = [TUMSexyLink]()
     
     override func viewDidLoad() {
         super.viewDidLoad()
         setupTableView()
         navigationController?.navigationBar.prefersLargeTitles = false
         title = "Useful Links".localized
+        
+        searchController.searchResultsUpdater = self
+        searchController.obscuresBackgroundDuringPresentation = false
+        searchController.searchBar.placeholder = "Search Links".localized
+        navigationItem.searchController = searchController
+        definesPresentationContext = true
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -72,14 +81,23 @@ final class TUMSexyTableViewController: UITableViewController {
     // MARK: UITableViewDataSource
     
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return importer.fetchedResultsController.fetchedObjects?.count ?? 0
+        if searchController.isActive {
+            return filteredData.count
+        } else {
+            return importer.fetchedResultsController.fetchedObjects?.count ?? 0
+        }
     }
     
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "TUMSexyLinkCell", for: indexPath)
-        let link = importer.fetchedResultsController.object(at: indexPath)
+    
+        if searchController.isActive {
+            cell.textLabel?.text = filteredData[indexPath.row].linkDescription
+        } else {
+            let link = importer.fetchedResultsController.object(at: indexPath)
+            cell.textLabel?.text = link.linkDescription
+        }
         
-        cell.textLabel?.text = link.linkDescription
         return cell
     }
 
@@ -87,11 +105,28 @@ final class TUMSexyTableViewController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        let link = importer.fetchedResultsController.object(at: indexPath)
+        let link: (TUMSexyLink)
+        
+        if searchController.isActive {
+            link = filteredData[indexPath.row]
+        } else {
+            link = importer.fetchedResultsController.object(at: indexPath)
+        }
+        
         guard let urlString = link.target, let url = URL(string: urlString) else { return }
         UIApplication.shared.open(url)
     }
     
-}
+    // MARK: UISearchResultsUpdating
+    func updateSearchResults(for searchController: UISearchController) {
+        filteredData.removeAll(keepingCapacity: false)
+        let tableData = importer.fetchedResultsController.fetchedObjects
+        
+        filteredData = tableData?.filter { (link: TUMSexyLink) -> Bool in
+            return link.linkDescription!.lowercased().contains(searchController.searchBar.text!.lowercased())
+        } ?? []
 
+        self.tableView.reloadData()
+    }
+}
 
